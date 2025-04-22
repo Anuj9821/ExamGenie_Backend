@@ -36,16 +36,16 @@ try:
     profiles_collection = db['profiles']
     
     # Create indexes only if collections exist
-    if users_collection.name in db.list_collection_names():
-        if 'email_1' not in [idx['name'] for idx in users_collection.list_indexes()]:
+    if 'users' in db.list_collection_names():
+        if 'email_1' not in [idx.get('name') for idx in list(users_collection.list_indexes())]:
             users_collection.create_index('email', unique=True)
     
-    if question_banks_collection.name in db.list_collection_names():
-        if 'subject_name_1' not in [idx['name'] for idx in question_banks_collection.list_indexes()]:
+    if 'question_banks' in db.list_collection_names():
+        if 'subject_name_1' not in [idx.get('name') for idx in list(question_banks_collection.list_indexes())]:
             question_banks_collection.create_index('subject_name')
     
-    if papers_collection.name in db.list_collection_names():
-        if 'created_at_1' not in [idx['name'] for idx in papers_collection.list_indexes()]:
+    if 'papers' in db.list_collection_names():
+        if 'created_at_1' not in [idx.get('name') for idx in list(papers_collection.list_indexes())]:
             papers_collection.create_index('created_at')
     
 except Exception as e:
@@ -57,7 +57,7 @@ except Exception as e:
             self._data = []
         
         def insert_one(self, document):
-            document['_id'] = len(self._data) + 1
+            document['_id'] = str(len(self._data) + 1)
             self._data.append(document)
             return type('obj', (object,), {'inserted_id': document['_id']})
         
@@ -103,6 +103,22 @@ except Exception as e:
         
         def list_indexes(self):
             return []
+        
+        def delete_many(self, query):
+            count = 0
+            new_data = []
+            for doc in self._data:
+                match = True
+                for k, v in query.items():
+                    if k not in doc or doc[k] != v:
+                        match = False
+                        break
+                if not match:
+                    new_data.append(doc)
+                else:
+                    count += 1
+            self._data = new_data
+            return type('obj', (object,), {'deleted_count': count})
     
     # Create dummy collections
     db = type('obj', (object,), {'list_collection_names': lambda: []})

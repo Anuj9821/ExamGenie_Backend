@@ -2,6 +2,7 @@
 import uuid
 import hashlib
 import datetime
+from bson import ObjectId
 from db_connection import users_collection
 
 def hash_password(password):
@@ -25,8 +26,8 @@ def create_user(email, password, name, department=None, institution=None, role='
         'email': email,
         'password': hash_password(password),
         'name': name,
-        'department': department,
-        'institution': institution,
+        'department': department or '',
+        'institution': institution or '',
         'role': role,
         'is_active': True,
         'is_staff': False,
@@ -59,25 +60,42 @@ def authenticate_user(email, password):
     
     return user_data, None
 
+# authentication/utils.py
 def get_user_by_id(user_id):
     """Get user by ID"""
-    from bson.objectid import ObjectId
-    
     try:
-        user = users_collection.find_one({'_id': ObjectId(user_id)})
+        from bson import ObjectId
+        print(f"Looking up user with ID: {user_id}")
+        
+        # Try to convert the user_id to ObjectId
+        try:
+            object_id = ObjectId(user_id)
+        except Exception as e:
+            print(f"Error converting user_id to ObjectId: {str(e)}")
+            return None
+        
+        # Find the user
+        user = users_collection.find_one({'_id': object_id})
+        
         if user:
             # Return user without password
             user_data = {k: v for k, v in user.items() if k != 'password'}
             user_data['_id'] = str(user_data['_id'])
+            
+            # Convert date_joined to ISO format string if it's a datetime
+            if 'date_joined' in user_data and isinstance(user_data['date_joined'], datetime.datetime):
+                user_data['date_joined'] = user_data['date_joined'].isoformat()
+                
             return user_data
         return None
-    except:
+    except Exception as e:
+        print(f"Error in get_user_by_id: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return None
 
 def update_user(user_id, update_data):
     """Update user data"""
-    from bson.objectid import ObjectId
-    
     # Don't allow updating email or password through this function
     if 'email' in update_data:
         del update_data['email']

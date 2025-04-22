@@ -1,33 +1,30 @@
 # authentication/serializers.py
 from rest_framework import serializers
-from django.contrib.auth import get_user_model
-from django.contrib.auth.password_validation import validate_password
 
-User = get_user_model()
-
-class RegisterSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True, required=True, validators=[validate_password])
+class RegisterSerializer(serializers.Serializer):
+    email = serializers.EmailField(required=True)
+    password = serializers.CharField(write_only=True, required=True)
     password2 = serializers.CharField(write_only=True, required=True)
-
-    class Meta:
-        model = User
-        fields = ('email', 'password', 'password2', 'name', 'department', 'institution', 'role')
-        extra_kwargs = {
-            'name': {'required': True},
-        }
-
+    name = serializers.CharField(required=True)
+    department = serializers.CharField(required=False, allow_blank=True)
+    institution = serializers.CharField(required=False, allow_blank=True)
+    role = serializers.CharField(required=False, default='teacher')
+    
     def validate(self, attrs):
         if attrs['password'] != attrs['password2']:
             raise serializers.ValidationError({"password": "Password fields didn't match."})
         return attrs
 
-    def create(self, validated_data):
-        validated_data.pop('password2')
-        user = User.objects.create_user(**validated_data)
-        return user
 
-class UserSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = User
-        fields = ('id', 'email', 'name', 'department', 'institution', 'role')
-        read_only_fields = ('id', 'email')
+class UserSerializer(serializers.Serializer):
+    _id = serializers.CharField(read_only=True)
+    email = serializers.EmailField(read_only=True)
+    name = serializers.CharField()
+    department = serializers.CharField(required=False, allow_blank=True)
+    institution = serializers.CharField(required=False, allow_blank=True)
+    role = serializers.CharField(read_only=True)
+    date_joined = serializers.CharField(read_only=True)  # Changed from DateTimeField to CharField
+
+class LoginSerializer(serializers.Serializer):
+    email = serializers.EmailField(required=True)
+    password = serializers.CharField(required=True, write_only=True)
