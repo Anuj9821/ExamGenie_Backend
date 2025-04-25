@@ -1,2 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Django stuff
+*.log
+*.pot
+*.pyc
+*.mo
+*.sqlite3
+*.db
+db.sqlite3
+
+# Environment
 .env
-/venv
+.venv/
+venv/
+env/
+ENV/
+
+# IDEs
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Migrations (optional, if you're generating them dynamically)
+**/migrations/*.py
+!**/migrations/__init__.py
+
+# Coverage
+htmlcov/
+.coverage
+coverage.xml
+.cache
+
+# Static/media (if generated dynamically)
+staticfiles/
+media/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# Local settings
+local_settings.py

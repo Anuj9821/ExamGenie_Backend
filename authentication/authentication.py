@@ -1,11 +1,12 @@
 # authentication/authentication.py
+import traceback
 import jwt
 from rest_framework import authentication
 from rest_framework import exceptions
 from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 from .utils import get_user_by_id
-
+from .user_wrapper import AuthenticatedMongoUser
 # authentication/authentication.py
 class MongoDBAuthentication(authentication.BaseAuthentication):
     """
@@ -61,13 +62,17 @@ class MongoDBAuthentication(authentication.BaseAuthentication):
             user = get_user_by_id(user_id)
             print(f"Found user: {user is not None}")
             
+            user = get_user_by_id(user_id)
             if not user:
                 raise exceptions.AuthenticationFailed(_('User not found.'))
             
-            # Store the user in the request for easy access
-            request.user_id = user_id
+            print(f"Found user: {user is not None}")
             
-            return (user, token)
+            # Wrap user dict to simulate Django User
+            wrapped_user = AuthenticatedMongoUser(user)
+
+            request.user_id = user_id
+            return (wrapped_user, token)
             
         except jwt.ExpiredSignatureError:
             print("Token expired")

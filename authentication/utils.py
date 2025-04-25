@@ -3,7 +3,10 @@ import uuid
 import hashlib
 import datetime
 from bson import ObjectId
+from authentication.admin import User
 from db_connection import users_collection
+from rest_framework_simplejwt.tokens import AccessToken
+from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 
 def hash_password(password):
     """Hash a password for storing."""
@@ -60,6 +63,20 @@ def authenticate_user(email, password):
     
     return user_data, None
 
+
+
+def get_user_from_token(request):
+    try:
+        token = request.headers.get('Authorization').split(' ')[1]  # Extract token from headers
+        access_token = AccessToken(token)
+        user_id = access_token['user_id']
+        user = User.objects.get(id=user_id)
+        request.user = user  # Assign the user to the request object
+        print("User in request:", request.user)
+    except (IndexError, InvalidToken, TokenError) as e:
+        raise AuthenticationFailed('Invalid or expired token') # type: ignore
+    
+    
 # authentication/utils.py
 def get_user_by_id(user_id):
     """Get user by ID"""

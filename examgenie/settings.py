@@ -53,13 +53,13 @@ INSTALLED_APPS = [
     
     # Third-party apps
     'rest_framework',
+    'papers',
     'corsheaders',
     'storages',
     
     # Local apps
     'authentication',
     'questions',
-    'papers',
     'profiles',
 ]
 
@@ -146,6 +146,8 @@ CORS_ALLOW_CREDENTIALS = True
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'authentication.authentication.MongoDBAuthentication',
+        'rest_framework_simplejwt.authentication.JWTAuthentication'
+        
     ),
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
