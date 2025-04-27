@@ -37,13 +37,12 @@ class PaperViewSet(viewsets.ModelViewSet):
     
     @action(detail=False, methods=['post'])
     def generate(self, request):
-        # Use dummy data instead of request data
         data = request.data if request.data else self.get_dummy_paper_params()
         
         try:
-            # Create paper object
+            # Create paper object with status
             paper = Paper.objects.create(
-                user_id=request.user._id,
+                user_id=request.user.id,
                 title=f"{data['subjectName']} Exam Paper",
                 subject_name=data['subjectName'],
                 department=data['department'],
@@ -52,27 +51,31 @@ class PaperViewSet(viewsets.ModelViewSet):
                 duration=data['duration'],
                 include_formula=data.get('includeFormula', False),
                 include_diagrams=data.get('includeDiagrams', False),
-                include_answer_key=data.get('includeAnswerKey', True)
+                include_answer_key=data.get('includeAnswerKey', True),
+                status='draft'
             )
             
-            # Create sections
-            for section_data in data['sections']:
+            # Create sections with order
+            for index, section_data in enumerate(data['sections']):
                 section = Section.objects.create(
                     paper=paper,
                     name=section_data['name'],
                     question_type=section_data['questionType'],
                     num_questions=section_data['numQuestions'],
-                    marks_per_question=section_data['marksPerQuestion']
+                    marks_per_question=section_data['marksPerQuestion'],
+                    instructions=section_data.get('instructions', ''),
+                    order=index
                 )
             
             # Generate questions using Ollama
             generated_questions = self.generate_questions_with_ollama(data)
             
-            # Save generated questions
+            # Save generated questions with additional fields
             for question_data in generated_questions:
-                section = get_object_or_404(Section, paper=paper, name=question_data['sectionName'])
+                section = Section.objects.filter(paper=paper, name=question_data['sectionName']).first()
                 
-                options = question_data.get('options')
+                if not section:
+                    continue
                 
                 Question.objects.create(
                     paper=paper,
@@ -82,14 +85,20 @@ class PaperViewSet(viewsets.ModelViewSet):
                     difficulty=question_data['difficulty'],
                     cognitive_level=question_data['cognitiveLevel'],
                     marks=question_data['marks'],
-                    options=options,
-                    answer=question_data['answer'],
-                    is_practical=question_data['isPractical']
+                    options=question_data.get('options'),
+                    answer=question_data.get('answer', ''),
+                    is_practical=question_data['isPractical'],
+                    topic=question_data.get('topic', ''),
+                    tags=question_data.get('tags', []),
+                    diagram=question_data.get('diagram', None),
+                    formula_required=question_data.get('formulaRequired', False)
                 )
             
-            # Return the complete paper with all generated questions
+            # Update paper status to complete
+            paper.status = 'published'
+            paper.save()
+            
             serializer = self.get_serializer(paper)
-            print(f"Generated paper: {serializer.data}")
             return Response(serializer.data, status=status.HTTP_201_CREATED)
             
         except Exception as e:
@@ -178,7 +187,7 @@ class PaperViewSet(viewsets.ModelViewSet):
                 generated_content = result.get('response', '')
                 
                 # Process the generated content to extract questions
-                questions = self.parse_ollama_response(generated_content, paper_params)
+                questions = self.parse_ollama_response(generated_content, paper_params)  
             else:
                 # Fallback to mock questions if Ollama fails
                 questions = self.generate_mock_questions(paper_params)
