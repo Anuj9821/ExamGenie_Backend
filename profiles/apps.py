@@ -1,6 +1,5 @@
-from django.apps import AppConfig
+from django.db import models
 
-
-class ProfilesConfig(AppConfig):
-    default_auto_field = 'django.db.models.BigAutoField'
-    name = 'profiles'
+class Migration:
+    # Empty migration class to prevent migration loading
+    pass

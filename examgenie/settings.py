@@ -5,7 +5,7 @@ from datetime import timedelta
 from pathlib import Path
 from dotenv import load_dotenv
 import logging
-
+from mongoengine import connect
 # Load environment variables
 load_dotenv()
 
@@ -15,6 +15,12 @@ MONGODB_URI = os.getenv('MONGODB_URI')
 MONGODB_DB = os.getenv('MONGODB_DB')
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-default-key')
+
+
+connect(
+    db=MONGODB_DB,
+    host=MONGODB_URI
+)
 
 # Configure logging
 LOGGING = {
@@ -102,11 +108,9 @@ WSGI_APPLICATION = 'examgenie.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'djongo',
-        'NAME': MONGODB_DB,
-        'CLIENT': {
-            'host': MONGODB_URI,
-        }
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': os.path.join(BASE_DIR, 'db.sqlite3'),
+        
     }
 }
 

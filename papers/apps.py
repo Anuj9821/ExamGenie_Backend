@@ -1,6 +1,5 @@
-from django.apps import AppConfig
+from django.db import models
 
-
-class PapersConfig(AppConfig):
-    default_auto_field = 'django.db.models.BigAutoField'
-    name = 'papers'
+class Migration:
+    # Empty migration class to prevent migration loading
+    pass
