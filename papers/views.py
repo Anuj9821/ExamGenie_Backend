@@ -11,6 +11,14 @@ from django.shortcuts import get_object_or_404
 from rest_framework.views import APIView
 from .models import Paper, Section, Question
 from .serializers import PaperSerializer
+from bson import ObjectId
+from pymongo import MongoClient
+from utils.db_utils import insert_paper, insert_section, insert_question, update_paper_status, get_paper
+from datetime import datetime, timezone
+from pymongo import ASCENDING
+import os
+from dotenv import load_dotenv
+
 
 class TestOllamaView(APIView):
     def get(self, request):
@@ -21,89 +29,150 @@ class TestOllamaView(APIView):
             traceback.print_exc()
             return Response({"error": "An error occurred"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-
 class PaperViewSet(viewsets.ModelViewSet):
     serializer_class = PaperSerializer
     permission_classes = [IsAuthenticated]
-    
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        load_dotenv()  # Load .env variables
+
+        mongo_uri = os.getenv("MONGODB_URI")
+        db_name = os.getenv("MONGODB_DB")
+
+        client = MongoClient(mongo_uri)
+        self.db = client[db_name]
+
     def get_queryset(self):
+        # This still uses Django ORM for relational models (Django's Paper model)
         return Paper.objects.filter(user=self.request.user).order_by('-created_at')
-    
+
     @action(detail=False, methods=['get'])
     def user(self, request):
         papers = self.get_queryset()
         serializer = self.get_serializer(papers, many=True)
         return Response(serializer.data)
     
+
+
+
     @action(detail=False, methods=['post'])
     def generate(self, request):
         data = request.data if request.data else self.get_dummy_paper_params()
         
         try:
-            # Create paper object with status
-            paper = Paper.objects.create(
-                user_id=request.user.id,
-                title=f"{data['subjectName']} Exam Paper",
-                subject_name=data['subjectName'],
-                department=data['department'],
-                topics=data['topics'],
-                total_marks=data['totalMarks'],
-                duration=data['duration'],
-                include_formula=data.get('includeFormula', False),
-                include_diagrams=data.get('includeDiagrams', False),
-                include_answer_key=data.get('includeAnswerKey', True),
-                status='draft'
-            )
+
+            # Ensure user.id is accessed correctly
+            user_id = str(request.user._id)  # This will get the _id from the MongoDB user
             
-            # Create sections with order
+            paper_doc = {
+                "user_id": user_id,
+                "title": f"{data['subjectName']} Exam Paper",
+                "subject_name": data['subjectName'],
+                "department": data['department'],
+                "topics": data['topics'],
+                "total_marks": data.get('totalMarks', 0),
+                "duration": data['duration'],
+                "include_formula": data.get('includeFormula', False),
+                "include_diagrams": data.get('includeDiagrams', False),
+                "include_answer_key": data.get('includeAnswerKey', True),
+                "status": "draft",
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
+            }
+            # 1. Insert Paper into MongoDB
+            paper_id = insert_paper(paper_doc, user_id)
+            if not paper_id:
+                return Response({"error": "Failed to create paper"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+            # 2. Insert Sections into MongoDB and keep track of their IDs
+            section_ids = {}
             for index, section_data in enumerate(data['sections']):
-                section = Section.objects.create(
-                    paper=paper,
-                    name=section_data['name'],
-                    question_type=section_data['questionType'],
-                    num_questions=section_data['numQuestions'],
-                    marks_per_question=section_data['marksPerQuestion'],
-                    instructions=section_data.get('instructions', ''),
-                    order=index
-                )
-            
-            # Generate questions using Ollama
+                section_id = insert_section(section_data, paper_id, index)
+                section_ids[section_data['name']] = section_id
+
+            # 3. Generate Questions using Ollama
             generated_questions = self.generate_questions_with_ollama(data)
-            
-            # Save generated questions with additional fields
+            # 4. Insert Questions into MongoDB
             for question_data in generated_questions:
-                section = Section.objects.filter(paper=paper, name=question_data['sectionName']).first()
-                
-                if not section:
+                section_name = question_data['sectionName']
+                if section_name not in section_ids:
                     continue
-                
-                Question.objects.create(
-                    paper=paper,
-                    section=section,
-                    text=question_data['text'],
-                    question_type=question_data['questionType'],
-                    difficulty=question_data['difficulty'],
-                    cognitive_level=question_data['cognitiveLevel'],
-                    marks=question_data['marks'],
-                    options=question_data.get('options'),
-                    answer=question_data.get('answer', ''),
-                    is_practical=question_data['isPractical'],
-                    topic=question_data.get('topic', ''),
-                    tags=question_data.get('tags', []),
-                    diagram=question_data.get('diagram', None),
-                    formula_required=question_data.get('formulaRequired', False)
-                )
-            
-            # Update paper status to complete
-            paper.status = 'published'
-            paper.save()
-            
-            serializer = self.get_serializer(paper)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-            
+
+                insert_question(question_data, paper_id, section_ids[section_name])
+
+            # 5. Update Paper Status to "published"
+            update_paper_status(paper_id)
+
+            #6. Retrieve the newly created paper data
+            paper = get_paper(paper_id)
+            if not paper:
+                return Response({"error": "Paper not found"}, status=status.HTTP_404_NOT_FOUND)
+            # 7. Return the paper data
+            return Response(self.serialize_paper(paper,paper_id), status=status.HTTP_201_CREATED)
+
         except Exception as e:
             traceback.print_exc()
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    def serialize_paper(self, paper_doc, paper_id):
+        # Get sections for this paper
+
+        sections = list(self.db["sections"].find({"paper_id": paper_id}).sort([("order", ASCENDING)]))
+
+        
+        # Prepare section-wise question lists
+        section_id_to_questions = {}
+        for section in sections:
+            questions = list(self.db["questions"].find({"section_id": section["_id"]}))
+            section_id_to_questions[str(section["_id"])] = [
+                {
+                    "id": str(q["_id"]),
+                    "text": q["text"],
+                    "question_type": q["question_type"],
+                    "difficulty": q["difficulty"],
+                    "cognitive_level": q["cognitive_level"],
+                    "marks": q["marks"],
+                    "options": q.get("options"),
+                    "answer": q.get("answer", ""),
+                    "is_practical": q["is_practical"],
+                    "topic": q.get("topic", ""),
+                    "tags": q.get("tags", []),
+                    "diagram": q.get("diagram"),
+                    "formula_required": q.get("formula_required", False),
+                }
+                for q in questions
+            ]
+
+        # Serialize sections with nested questions
+        serialized_sections = []
+        for section in sections:
+            serialized_sections.append({
+                "id": str(section["_id"]),
+                "name": section["name"],
+                "question_type": section["question_type"],
+                "num_questions": section["num_questions"],
+                "marks_per_question": section["marks_per_question"],
+                "instructions": section.get("instructions", ""),
+                "order": section["order"],
+                "questions": section_id_to_questions.get(str(section["_id"]), [])
+            })
+        # Final serialized paper with sections and questions
+        return {
+            "id": str(paper_doc["_id"]),
+            "user_id": paper_doc["user_id"],
+            "title": paper_doc["title"],
+            "subject_name": paper_doc["subject_name"],
+            "department": paper_doc["department"],
+            "topics": paper_doc["topics"],
+            "total_marks": paper_doc["total_marks"],
+            "duration": paper_doc["duration"],
+            "include_formula": paper_doc["include_formula"],
+            "include_diagrams": paper_doc["include_diagrams"],
+            "include_answer_key": paper_doc["include_answer_key"],
+            "status": paper_doc["status"],
+            "sections": serialized_sections
+        }
+
     
     def get_dummy_paper_params(self):
         """Return dummy paper parameters for testing"""

@@ -7,7 +7,7 @@ from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 from .utils import get_user_by_id
 from .user_wrapper import AuthenticatedMongoUser
-# authentication/authentication.py
+
 class MongoDBAuthentication(authentication.BaseAuthentication):
     """
     Custom authentication backend for MongoDB users.
@@ -43,7 +43,7 @@ class MongoDBAuthentication(authentication.BaseAuthentication):
     def authenticate_credentials(self, token, request):
         try:
             # Print the token for debugging
-            print(f"Authenticating token: {token[:10]}...")
+            print(f"Authenticating token: {token[:10]}...")  # Print the first 10 characters of the token for visibility
             
             # Decode the JWT token
             payload = jwt.decode(
@@ -52,28 +52,31 @@ class MongoDBAuthentication(authentication.BaseAuthentication):
                 algorithms=['HS256']
             )
             
+            # Print the decoded payload for debugging
+            print(f"Decoded payload: {payload}")
+            
             user_id = payload.get('user_id')
-            print(f"Decoded user_id: {user_id}")
+            print(f"Decoded user_id: {user_id}")  # Print the user_id extracted from the token
             
             if not user_id:
                 raise exceptions.AuthenticationFailed(_('Invalid token. No user_id found.'))
             
             # Get the user from MongoDB
             user = get_user_by_id(user_id)
-            print(f"Found user: {user is not None}")
+            print(f"Found user in MongoDB: {user is not None}")  # Check if the user exists in MongoDB
             
-            user = get_user_by_id(user_id)
             if not user:
                 raise exceptions.AuthenticationFailed(_('User not found.'))
             
-            print(f"Found user: {user is not None}")
-            
             # Wrap user dict to simulate Django User
             wrapped_user = AuthenticatedMongoUser(user)
-
-            request.user_id = user_id
-            return (wrapped_user, token)
             
+            # Assign wrapped user to request.user
+            request.user = wrapped_user
+            request.user_id = user_id
+            
+            return (wrapped_user, token)
+        
         except jwt.ExpiredSignatureError:
             print("Token expired")
             raise exceptions.AuthenticationFailed(_('Token expired.'))

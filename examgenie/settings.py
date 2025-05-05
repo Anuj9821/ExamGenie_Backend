@@ -13,6 +13,7 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent.parent
 MONGODB_URI = os.getenv('MONGODB_URI')
 MONGODB_DB = os.getenv('MONGODB_DB')
+
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-default-key')
 
