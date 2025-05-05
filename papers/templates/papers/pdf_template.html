@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body {
+            font-family: Helvetica, sans-serif;
+            font-size: 12px;
+            line-height: 1.5;
+            margin: 40px;
+        }
+
+        h1, h2 {
+            margin: 0;
+            padding: 0;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .meta {
+            font-size: 12px;
+            text-align: center;
+            margin-top: 5px;
+            margin-bottom: 30px;
+        }
+
+        .section {
+            margin-bottom: 20px;
+            page-break-inside: avoid;
+        }
+
+        .section h3 {
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+
+        .question {
+            margin-bottom: 10px;
+        }
+
+        .question p {
+            margin: 0;
+        }
+
+        .answer {
+            margin-top: 5px;
+            font-style: italic;
+            color: #555;
+            font-size: 11px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>{{ paper.title }}</h1>
+    </div>
+    <div class="meta">
+        Subject: {{ paper.subject_name }} |
+        Department: {{ paper.department }} |
+        Duration: {{ paper.duration }} |
+        Total Marks: {{ paper.total_marks }}
+    </div>
+
+    {% for section in sections %}
+    <div class="section">
+        <h3>{{ section.name }} ({{ section.question_type|title }})</h3>
+        {% for q in section.questions %}
+<div class="question">
+    <p><strong>{{ forloop.counter }}.</strong> {{ q.text }} <span>({{ q.marks }} marks)</span></p>
+
+    {% if q.question_type == "mcq" and q.options %}
+    <table style="margin-left: 20px; width: auto; margin-top:0%;">
+        <tr>
+            <td>{{ q.options.0 }}</td>
+            <td>{{ q.options.1 }}</td>
+        </tr>
+        <tr>
+            <td>{{ q.options.2 }}</td>
+            <td>{{ q.options.3 }}</td>
+        </tr>
+    </table>
+    {% endif %}
+
+    {% if include_answers and q.answer %}
+    <div class="answer">Answer: {{ q.answer }}</div>
+    {% endif %}
+</div>
+{% endfor %}
+
+    </div>
+    {% endfor %}
+</body>
+</html>

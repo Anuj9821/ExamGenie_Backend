@@ -1,5 +1,7 @@
 # papers/views.py
+from io import BytesIO
 import json
+from django.http import HttpResponse
 import requests
 import traceback
 import random
@@ -7,17 +9,21 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from django.shortcuts import get_object_or_404
 from rest_framework.views import APIView
-from .models import Paper, Section, Question
+from .models import Paper
 from .serializers import PaperSerializer
 from bson import ObjectId
 from pymongo import MongoClient
-from utils.db_utils import insert_paper, insert_section, insert_question, update_paper_status, get_paper
+from utils.db_utils import get_paper
 from datetime import datetime, timezone
 from pymongo import ASCENDING
 import os
 from dotenv import load_dotenv
+from rest_framework.decorators import api_view, permission_classes
+from utils.db_utils import db
+from xhtml2pdf import pisa
+from django.template.loader import render_to_string
+
 
 
 class TestOllamaView(APIView):
@@ -81,28 +87,29 @@ class PaperViewSet(viewsets.ModelViewSet):
                 "updated_at": datetime.now(timezone.utc),
             }
             # 1. Insert Paper into MongoDB
-            paper_id = insert_paper(paper_doc, user_id)
+            # paper_id = insert_paper(paper_doc, user_id)
+            paper_id = ObjectId("681878d00b4563cb1baa6b48")  # Convert to ObjectId for MongoDB
             if not paper_id:
                 return Response({"error": "Failed to create paper"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-            # 2. Insert Sections into MongoDB and keep track of their IDs
-            section_ids = {}
-            for index, section_data in enumerate(data['sections']):
-                section_id = insert_section(section_data, paper_id, index)
-                section_ids[section_data['name']] = section_id
+            # # 2. Insert Sections into MongoDB and keep track of their IDs
+            # section_ids = {}
+            # for index, section_data in enumerate(data['sections']):
+            #     section_id = insert_section(section_data, paper_id, index)
+            #     section_ids[section_data['name']] = section_id
 
-            # 3. Generate Questions using Ollama
-            generated_questions = self.generate_questions_with_ollama(data)
-            # 4. Insert Questions into MongoDB
-            for question_data in generated_questions:
-                section_name = question_data['sectionName']
-                if section_name not in section_ids:
-                    continue
+            # # 3. Generate Questions using Ollama
+            # generated_questions = self.generate_questions_with_ollama(data)
+            # # 4. Insert Questions into MongoDB
+            # for question_data in generated_questions:
+            #     section_name = question_data['sectionName']
+            #     if section_name not in section_ids:
+            #         continue
 
-                insert_question(question_data, paper_id, section_ids[section_name])
+            #     insert_question(question_data, paper_id, section_ids[section_name])
 
-            # 5. Update Paper Status to "published"
-            update_paper_status(paper_id)
+            # # 5. Update Paper Status to "published"
+            # update_paper_status(paper_id)
 
             #6. Retrieve the newly created paper data
             paper = get_paper(paper_id)
@@ -540,3 +547,36 @@ class PaperViewSet(viewsets.ModelViewSet):
         
         # Default fallback
         return list(distribution.keys())[0]
+    
+    
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def download_paper_pdf(request, paper_id):
+    try:
+        paper = db["papers"].find_one({"_id": ObjectId(paper_id)})
+        if not paper:
+            return Response({"error": "Paper not found"}, status=404)
+
+        sections = list(db["sections"].find({"paper_id": ObjectId(paper_id)}).sort("order", 1))
+        for section in sections:
+            section["questions"] = list(db["questions"].find({"section_id": section["_id"]}))
+
+        html = render_to_string("./papers/pdf_template.html", {
+            "paper": paper,
+            "sections": sections
+        })
+
+        buffer = BytesIO()
+        pisa_status = pisa.CreatePDF(html, dest=buffer)
+        if pisa_status.err:
+            return Response({"error": "PDF generation failed"}, status=500)
+
+        buffer.seek(0)
+        return HttpResponse(buffer, content_type='application/pdf', headers={
+            'Content-Disposition': f'attachment; filename="{paper["title"]}.pdf"'
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return Response({"error": str(e)}, status=500)
