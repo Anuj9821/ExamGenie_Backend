@@ -1,0 +1,90 @@
+[
+    {
+        "academic_year": "TE",
+        "department": "Information Technology",
+        "subject_name": "Advanced Database And Management System",
+        "subject_code": null,
+        "papernumber": "6353 - 125",
+        "question_text": "What is a NOSQL Database? How would you classify the different types of NOSQL Databases? [9]",
+        "unit": null,
+        "marks": 9,
+        "hash": "79b367a77f9d15bff4751d88084a947d"
+    },
+    {
+        "academic_year": "TE",
+        "department": "Information Technology",
+        "subject_name": "Advanced Database And Management System",
+        "subject_code": null,
+        "papernumber": "6353 - 125",
+        "question_text": "What is meant by a column-based database? What are the different components of the Cassandra Database? [9]",
+        "unit": null,
+        "marks": 9,
+        "hash": "744af7a1ed2597903a4c8ed9e957c684"
+    },
+    {
+        "academic_year": "TE",
+        "department": "Information Technology",
+        "subject_name": "Advanced Database And Management System",
+        "subject_code": null,
+        "papernumber": "6353 - 125",
+        "question_text": "How would you compare OLTP and OLAP Systems based on their features? [8]",
+        "unit": null,
+        "marks": 8,
+        "hash": "05895374ce3e8096ef980ba50e8e6e9d"
+    },
+    {
+        "academic_year": "TE",
+        "department": "Information Technology",
+        "subject_name": "Advanced Database And Management System",
+        "subject_code": null,
+        "papernumber": "6353 - 125",
+        "question_text": "Explain in brief the characteristics and limitations of the data warehouse.[8]",
+        "unit": null,
+        "marks": 8,
+        "hash": "a7e1bea8b415dda6b5019d9c8a3939c8"
+    },
+    {
+        "academic_year": "TE",
+        "department": "Information Technology",
+        "subject_name": "Advanced Database And Management System",
+        "subject_code": null,
+        "papernumber": "6353 - 125",
+        "question_text": "How would you demonstrate the KDD seven-step process? [9]",
+        "unit": null,
+        "marks": 9,
+        "hash": "cbbc206ea11209c6915b498f26dcec53"
+    },
+    {
+        "academic_year": "TE",
+        "department": "Information Technology",
+        "subject_name": "Advanced Database And Management System",
+        "subject_code": null,
+        "papernumber": "6353 - 125",
+        "question_text": "Explain the architecture of data mining techniques. [9]",
+        "unit": null,
+        "marks": 9,
+        "hash": "1c541b21c5455cd79c857e15d1988a35"
+    },
+    {
+        "academic_year": "TE",
+        "department": "Information Technology",
+        "subject_name": "Advanced Database And Management System",
+        "subject_code": null,
+        "papernumber": "6353 - 125",
+        "question_text": "Elaborate the term Mobile databases. [9]",
+        "unit": null,
+        "marks": 9,
+        "hash": "e4f35090b59029a6fddb88521c643ce1"
+    },
+    {
+        "academic_year": "TE",
+        "department": "Information Technology",
+        "subject_name": "Advanced Database And Management System",
+        "subject_code": null,
+        "papernumber": "6353 - 125",
+        "question_text": "Write a short note on Multimedia databases. [9]",
+        "unit": null,
+        "marks": 9,
+        "hash": "a10386b705f0bc1d26e9a7edf0353361"
+    }
+]
