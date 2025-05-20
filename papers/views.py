@@ -23,6 +23,7 @@ from rest_framework.decorators import api_view, permission_classes
 from utils.db_utils import db
 from xhtml2pdf import pisa
 from django.template.loader import render_to_string
+from utils.db_utils import insert_section, insert_question, update_paper_status
 
 
 
@@ -92,24 +93,24 @@ class PaperViewSet(viewsets.ModelViewSet):
             if not paper_id:
                 return Response({"error": "Failed to create paper"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-            # # 2. Insert Sections into MongoDB and keep track of their IDs
-            # section_ids = {}
-            # for index, section_data in enumerate(data['sections']):
-            #     section_id = insert_section(section_data, paper_id, index)
-            #     section_ids[section_data['name']] = section_id
+            # 2. Insert Sections into MongoDB and keep track of their IDs
+            section_ids = {}
+            for index, section_data in enumerate(data['sections']):
+                section_id = insert_section(section_data, paper_id, index)
+                section_ids[section_data['name']] = section_id
 
-            # # 3. Generate Questions using Ollama
-            # generated_questions = self.generate_questions_with_ollama(data)
-            # # 4. Insert Questions into MongoDB
-            # for question_data in generated_questions:
-            #     section_name = question_data['sectionName']
-            #     if section_name not in section_ids:
-            #         continue
+            # 3. Generate Questions using Ollama
+            generated_questions = self.generate_questions_with_ollama(data)
+            # 4. Insert Questions into MongoDB
+            for question_data in generated_questions:
+                section_name = question_data['sectionName']
+                if section_name not in section_ids:
+                    continue
 
-            #     insert_question(question_data, paper_id, section_ids[section_name])
+                insert_question(question_data, paper_id, section_ids[section_name])
 
-            # # 5. Update Paper Status to "published"
-            # update_paper_status(paper_id)
+            # 5. Update Paper Status to "published"
+            update_paper_status(paper_id)
 
             #6. Retrieve the newly created paper data
             paper = get_paper(paper_id)

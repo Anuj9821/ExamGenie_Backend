@@ -64,6 +64,7 @@ INSTALLED_APPS = [
     'papers',
     'corsheaders',
     'storages',
+    'syllabus',
     
     # Local apps
     'authentication',
