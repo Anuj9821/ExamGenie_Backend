@@ -23,7 +23,7 @@ from rest_framework.decorators import api_view, permission_classes
 from utils.db_utils import db
 from xhtml2pdf import pisa
 from django.template.loader import render_to_string
-from utils.db_utils import insert_section, insert_question, update_paper_status
+from utils.db_utils import insert_section, insert_question, update_paper_status, insert_paper
 
 
 
@@ -88,8 +88,8 @@ class PaperViewSet(viewsets.ModelViewSet):
                 "updated_at": datetime.now(timezone.utc),
             }
             # 1. Insert Paper into MongoDB
-            # paper_id = insert_paper(paper_doc, user_id)
-            paper_id = ObjectId("681878d00b4563cb1baa6b48")  # Convert to ObjectId for MongoDB
+            paper_id = insert_paper(paper_doc, user_id)
+            #paper_id = ObjectId("681878d00b4563cb1baa6b48")  # Convert to ObjectId for MongoDB
             if not paper_id:
                 return Response({"error": "Failed to create paper"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
