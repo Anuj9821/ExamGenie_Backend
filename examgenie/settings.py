@@ -9,6 +9,13 @@ from mongoengine import connect
 # Load environment variables
 load_dotenv()
 
+import os
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+MEDIA_URL = '/media/'
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 MONGODB_URI = os.getenv('MONGODB_URI')

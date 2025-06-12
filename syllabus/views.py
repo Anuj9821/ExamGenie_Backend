@@ -3,9 +3,81 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.utils.timezone import now
 from PyPDF2 import PdfReader
+from datetime import datetime, timezone
 import re
 from utils.db_utils import db
+from transformers import pipeline, set_seed
 
+# === LOAD GPT-2 PIPELINE ===
+generator = pipeline("text-generation", model="gpt2")
+set_seed(42)
+
+# === FUNCTION: Extract Units ===
+def extract_unit_topics(text):
+    # Match all unit headers
+    unit_headers = list(re.finditer(r'(Unit\s+[IVXLC]+\s+.+?)\n', text, flags=re.IGNORECASE))
+
+    units = []
+
+    for i, header in enumerate(unit_headers):
+        unit_heading = header.group(1).strip()
+        unit_match = re.search(r'Unit\s+([IVXLC]+)', unit_heading, re.IGNORECASE)
+        unit_number = unit_match.group(1).strip().upper() if unit_match else f"U{i+1}"
+
+
+        # Start position of this unit
+        start_pos = header.end()
+
+        # End position = start of next unit or end of text
+        if i + 1 < len(unit_headers):
+            end_pos = unit_headers[i + 1].start()
+        else:
+            # This is the last unit
+            end_pos = len(text)
+
+        # Extract content between headers
+        unit_body = text[start_pos:end_pos].strip()
+
+        # Remove trailing Mapping line if present
+        unit_body = re.sub(r'Mapping of Course Outcomes\s*for\s+Unit\s+[IVXLC]+\s+CO\d+', '', unit_body, flags=re.IGNORECASE).strip()
+
+        # Skip if unit text is empty or heading is a CO line
+        if not unit_body.strip():
+            continue
+        if re.search(r'\bCO\d+\b', unit_heading, re.IGNORECASE):
+            continue
+
+        units.append({
+            "unit_number": unit_number,
+            "heading": unit_heading,
+            "topics_text": unit_body
+        })
+
+
+    return units
+
+
+
+# === FUNCTION: Split unit text into topics ===
+def split_into_topics(unit_text):
+    clean_text = re.sub(r'\s+', ' ', unit_text).strip()
+    clean_text = re.sub(r'Mapping of Course Outcomes\s*for.*$', '', clean_text, flags=re.IGNORECASE)
+    return [topic.strip() for topic in clean_text.split(',') if topic.strip()]
+
+
+# === FUNCTION: Generate Context using GPT-2 ===
+def generate_context_with_gpt2(topic):
+    prompt = (
+        f"Write a short academic explanation in one paragraph about the topic: '{topic}'. "
+        "Explain it in simple and informative language suitable for students."
+    )
+    try:
+        output = generator(prompt, max_length=120, num_return_sequences=1)
+        return output[0]["generated_text"].replace(prompt, "").strip()
+    except Exception as e:
+        return f"Context generation failed: {str(e)}"
+
+# === MAIN API ===
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def upload_syllabus(request):

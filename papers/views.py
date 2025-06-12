@@ -1,7 +1,10 @@
 # papers/views.py
+import hashlib
 from io import BytesIO
 import json
+import re
 from django.http import HttpResponse
+import fitz
 import requests
 import traceback
 import random
@@ -24,7 +27,10 @@ from utils.db_utils import db
 from xhtml2pdf import pisa
 from django.template.loader import render_to_string
 from utils.db_utils import insert_section, insert_question, update_paper_status, insert_paper
-
+from django.core.files.storage import default_storage
+from django.core.files.base import ContentFile
+from django.conf import settings
+from django.core.files.storage import FileSystemStorage
 
 
 class TestOllamaView(APIView):
@@ -181,6 +187,351 @@ class PaperViewSet(viewsets.ModelViewSet):
             "sections": serialized_sections
         }
 
+
+    @action(detail=False, methods=['post'], url_path='upload-question-paper')
+    def upload_question_paper(self, request):
+        """Upload and process PDF question paper"""
+        try:
+            # Get form data
+            uploaded_file = request.FILES.get('file')
+            subject_name = request.data.get('subjectName', '')
+            subject_code = request.data.get('subjectCode', '')
+            exam_type = request.data.get('examType', '')
+
+            if not uploaded_file:
+                return Response({'error': 'No file uploaded'}, status=status.HTTP_400_BAD_REQUEST)
+
+            if not subject_name:
+                return Response({'error': 'Subject name is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+            if not uploaded_file.name.lower().endswith('.pdf'):
+                return Response({'error': 'Only PDF files are supported'}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Define local storage path
+            temp_dir = os.path.join(settings.BASE_DIR, 'media', 'temp_pdfs')
+            os.makedirs(temp_dir, exist_ok=True)
+
+            # Use local file system storage (not S3)
+            local_storage = FileSystemStorage(location=temp_dir)
+            file_name = local_storage.save(uploaded_file.name, ContentFile(uploaded_file.read()))
+            file_path = local_storage.path(file_name)
+
+            try:
+                # Process PDF and extract questions
+                questions = self.extract_questions_from_pdf(
+                    file_path, subject_name, subject_code, exam_type, request.user
+                )
+
+                # Save questions to MongoDB
+                saved_questions = self.save_questions_to_db(questions)
+
+                # Clean up temporary file
+                local_storage.delete(file_name)
+
+                return Response({
+                    'success': True,
+                    'message': f'Successfully processed {len(saved_questions)} questions',
+                    'questions': saved_questions
+                }, status=status.HTTP_201_CREATED)
+
+            except Exception as e:
+                # Clean up file if something goes wrong
+                if local_storage.exists(file_name):
+                    local_storage.delete(file_name)
+                raise e
+
+        except Exception as e:
+            traceback.print_exc()
+            return Response({
+                'error': f'Processing failed: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=['post'], url_path='update-question')
+    def update_question(self, request):
+        """Update an existing question"""
+        try:
+            data = request.data
+            question_id = data.get('id')
+            question_text = data.get('question_text')
+            unit = data.get('unit')
+            marks = data.get('marks')
+
+            if not question_id:
+                return Response({'error': 'Question ID is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Update the question in MongoDB
+            update_data = {
+                "question_text": question_text,
+                "unit": int(unit) if unit else None,
+                "marks": int(marks) if marks else None,
+                "hash": hashlib.md5(question_text.encode()).hexdigest(),
+                "updated_by": str(request.user._id),
+                "updated_at": datetime.now()
+            }
+
+            result = db["pyq_questions"].update_one(
+                {"_id": ObjectId(question_id)},
+                {"$set": update_data}
+            )
+
+            if result.modified_count > 0:
+                return Response({'success': True, 'message': 'Question updated successfully'})
+            else:
+                return Response({'error': 'Question not found or no changes made'}, status=status.HTTP_404_NOT_FOUND)
+
+        except Exception as e:
+            traceback.print_exc()  # This will show the real error in the console
+            return Response({"error": f"Update failed: {str(e)}"}, status=500)
+
+    @action(detail=False, methods=['get'], url_path='questions')
+    def get_questions(self, request):
+        """Get questions with optional filtering"""
+        try:
+            # Get query parameters for filtering
+            subject_name = request.query_params.get('subject_name')
+            subject_code = request.query_params.get('subject_code')
+            exam_type = request.query_params.get('exam_type')
+            unit = request.query_params.get('unit')
+            uploaded_by = request.query_params.get('uploaded_by')
+
+            # Build filter query
+            filter_query = {}
+            if subject_name:
+                filter_query['subject_name'] = {'$regex': subject_name, '$options': 'i'}
+            if subject_code:
+                filter_query['subject_code'] = subject_code
+            if exam_type:
+                filter_query['exam_type'] = exam_type
+            if unit:
+                filter_query['unit'] = int(unit)
+            if uploaded_by:
+                filter_query['uploaded_by'] = int(uploaded_by)
+
+            # Get questions from MongoDB
+            questions = list(db["pyq_questions"].find(filter_query).sort('uploaded_at', -1))
+            
+            # Convert ObjectId to string for JSON serialization
+            for question in questions:
+                question['_id'] = str(question['_id'])
+                question['isEditing'] = False
+
+            return Response({
+                'success': True,
+                'questions': questions,
+                'count': len(questions)
+            })
+
+        except Exception as e:
+            return Response({'error': f'Failed to fetch questions: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=True, methods=['delete'], url_path='delete')
+    def delete_question(self, request, pk=None):
+        """Delete a specific question"""
+        try:
+            result = db["pyq_questions"].delete_one({"_id": ObjectId(pk)})
+            
+            if result.deleted_count > 0:
+                return Response({'success': True, 'message': 'Question deleted successfully'})
+            else:
+                return Response({'error': 'Question not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        except Exception as e:
+            return Response({'error': f'Delete failed: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=['get'], url_path='upload-history')
+    def get_upload_history(self, request):
+        """Get upload history for the current user"""
+        try:
+            # Get unique uploads by user
+            pipeline = [
+                {"$match": {"uploaded_by": str(request.user._id)}},
+                {"$group": {
+                    "_id": {
+                        "subject_name": "$subject_name",
+                        "subject_code": "$subject_code",
+                        "exam_type": "$exam_type",
+                        "uploaded_at": "$uploaded_at"
+                    },
+                    "question_count": {"$sum": 1},
+                    "filename": {"$first": "$filename"}
+                }},
+                {"$sort": {"_id.uploaded_at": -1}},
+                {"$limit": 20}
+            ]
+            
+            history = list(db["pyq_questions"].aggregate(pipeline))
+            
+            # Format for frontend
+            formatted_history = []
+            for item in history:
+                formatted_history.append({
+                    'id': str(item['_id']['uploaded_at']),
+                    'filename': item.get('filename', f"{item['_id']['subject_name']}.pdf"),
+                    'date': item['_id']['uploaded_at'].strftime('%Y-%m-%d') if item['_id']['uploaded_at'] else '',
+                    'subject_name': item['_id']['subject_name'],
+                    'exam_type': item['_id']['exam_type'],
+                    'question_count': item['question_count']
+                })
+            
+            return Response({
+                'success': True,
+                'history': formatted_history
+            })
+
+        except Exception as e:
+            return Response({'error': f'Failed to fetch history: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def extract_questions_from_pdf(self, file_path, subject_name, subject_code, exam_type, user):
+        """Extract questions from PDF using the provided logic"""
+        from datetime import datetime
+        
+        # Load PDF
+        doc = fitz.open(file_path)
+        full_text = "\n".join([page.get_text() for page in doc])
+        doc.close()
+
+        # Extract Metadata
+        
+        # 1. Academic Year (e.g., SE/TE/BE)
+        year_match = re.search(r'(S\.E\.|T\.E\.|B\.E\.)', full_text, re.IGNORECASE)
+        academic_year = year_match.group(1).upper().replace('.', '') if year_match else None
+
+        # 2. Department
+        dept_match = None
+        if year_match:
+            text_after_year = full_text.split(year_match.group(1), 1)[1] if len(full_text.split(year_match.group(1))) > 1 else ""
+            dept_match = re.search(r'\((.*?)\)', text_after_year)
+        department = dept_match.group(1).strip().title() if dept_match else None
+
+        # 3. Subject Code
+        subject_code_match = re.search(r'\((\d{6}[A-Z]?)\)', full_text)
+        extracted_subject_code = subject_code_match.group(1).strip().replace(" ", "") if subject_code_match else subject_code
+
+        # 4. Subject Name (first ALL CAPS line after department)
+        subject_name_match = re.search(r'\n([A-Z][A-Z\s&\-]+)\n', full_text)
+        extracted_subject_name = subject_name_match.group(1).strip().title() if subject_name_match else subject_name
+
+        # 5. Full Paper Number (e.g., [6353] - 125)
+        papernum_match = re.search(r'\[\d+\]\s*-\s*\d+', full_text)
+        papernumber = papernum_match.group(0) if papernum_match else None
+        if papernumber:
+            papernumber = re.sub(r'[\[\]]', '', papernumber).strip()
+
+        # Define unit mapping
+        unit_map = {
+            "Q1": 3, "Q2": 3,
+            "Q3": 4, "Q4": 4,  
+            "Q5": 5, "Q6": 5,
+            "Q7": 6, "Q8": 6
+        }
+
+        # Extract Questions
+        question_section = full_text
+        if "Instructions to the candidates:" in full_text:
+            question_section = full_text.split("Instructions to the candidates:")[-1]
+
+        # Clean up the text by removing extra whitespace and normalizing
+        question_section = re.sub(r'\s+', ' ', question_section).strip()
+
+        # Split by main questions (Q1), Q2), etc.)
+        main_questions = re.split(r'(Q\d+\))', question_section)[1:]  # Remove empty first element
+
+        # Clean and Structure Data
+        question_list = []
+        current_time = datetime.now()
+
+        # Process pairs of (question_number, question_content)
+        for i in range(0, len(main_questions), 2):
+            if i + 1 < len(main_questions):
+                q_main = main_questions[i].strip()  # e.g., "Q1)"
+                q_content = main_questions[i + 1].strip()
+                
+                # Remove the closing parenthesis for mapping
+                q_main_clean = q_main.replace(")", "")  # "Q1)" -> "Q1"
+                
+                # Split by OR to handle alternative questions
+                or_sections = re.split(r'\bOR\b', q_content)
+                
+                for section_idx, section in enumerate(or_sections):
+                    section = section.strip()
+                    if not section:
+                        continue
+                        
+                    # Find all sub-questions (a), b), c), etc.) in this section
+                    sub_questions = re.split(r'([a-z]\))', section)[1:]  # Remove empty first element
+                    
+                    # Process pairs of (sub_question_letter, sub_question_content)
+                    for j in range(0, len(sub_questions), 2):
+                        if j + 1 < len(sub_questions):
+                            sub_letter = sub_questions[j].strip()  # e.g., "a)"
+                            sub_content = sub_questions[j + 1].strip()
+                            
+                            if not sub_content:
+                                continue
+                            
+                            # Extract marks
+                            marks_match = re.search(r'\[(\d+)\]', sub_content)
+                            marks = int(marks_match.group(1)) if marks_match else None
+                            
+                            # Clean the question text by removing marks
+                            clean_text = re.sub(r'\[\d+\]', '', sub_content).strip()
+                            
+                            # Remove any trailing periods or extra whitespace
+                            clean_text = re.sub(r'\s+', ' ', clean_text).strip()
+                            clean_text = clean_text.rstrip('.')
+                            
+                            if clean_text:  # Only add non-empty questions
+                                # Create full question identifier
+                                full_question_id = f"{q_main_clean}{sub_letter}"
+                                if section_idx > 0:  # If this is from an OR section
+                                    full_question_id += f" (Alternative)"
+                                
+                                question_list.append({
+                                    "academic_year": academic_year,
+                                    "department": department,
+                                    "subject_name": extracted_subject_name,
+                                    "subject_code": extracted_subject_code,
+                                    "papernumber": papernumber,
+                                    "exam_type": exam_type,
+                                    "question_id": full_question_id,
+                                    "main_question": q_main_clean,
+                                    "sub_question": sub_letter.replace(")", ""),
+                                    "is_alternative": section_idx > 0,
+                                    "question_text": clean_text,
+                                    "unit": unit_map.get(q_main_clean, None),
+                                    "marks": marks,
+                                    "hash": hashlib.md5(clean_text.encode()).hexdigest(),
+                                    "uploaded_by": str(user._id),
+                                    "uploaded_at": current_time,
+                                    "updated_at": current_time,
+                                    "filename": file_path.split('/')[-1],
+                                    "isEditing": False  # For frontend editing functionality
+                                })
+
+        return question_list
+
+    def save_questions_to_db(self, questions):
+        """Save questions to MongoDB and return saved questions with IDs"""
+        saved_questions = []
+        
+        for question in questions:
+            # Check if the question already exists
+            existing_question = db["pyq_questions"].find_one({"hash": question["hash"]})
+            
+            if not existing_question:
+                # Insert the new question
+                result = db["pyq_questions"].insert_one(question)
+                question["_id"] = str(result.inserted_id)
+                saved_questions.append(question)
+                print(f"Inserted: {question['question_text']}")
+            else:
+                # Return existing question with string ID
+                existing_question["_id"] = str(existing_question["_id"])
+                existing_question["isEditing"] = False
+                saved_questions.append(existing_question)
+                print(f"Already exists: {existing_question['question_text']}")
+        
+        return saved_questions
     
     def get_dummy_paper_params(self):
         """Return dummy paper parameters for testing"""
