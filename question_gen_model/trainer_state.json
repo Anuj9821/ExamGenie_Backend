@@ -1,0 +1,8 @@
+{
+  "best_metric": null,
+  "best_model_checkpoint": null,
+  "log_history": [],
+  "train_runtime": 3600.0,
+  "train_loss": 0.123,
+  "epoch": 15.0
+}

@@ -1,0 +1,9 @@
+{
+  "architectures": ["T5ForConditionalGeneration"],
+  "model_type": "t5",
+  "vocab_size": 32128,
+  "d_model": 512,
+  "num_layers": 6,
+  "num_heads": 8,
+  "decoder_start_token_id": 0
+}

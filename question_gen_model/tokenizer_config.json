@@ -1,0 +1,5 @@
+{
+  "model_max_length": 512,
+  "use_fast": true,
+  "tokenizer_class": "T5Tokenizer"
+}
